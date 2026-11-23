@@ -1,0 +1,42 @@
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# MLflow local artifacts
+mlruns/
+mlartifacts/
+mlflow.db/
+
+# DVC local configuration
+.dvc/config.local
+.dvc/tmp/
+.dvc/cache/
+
+# Data files (managed by DVC)
+data/**/*.csv
+data/**/*.parquet
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
