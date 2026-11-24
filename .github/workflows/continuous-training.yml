@@ -1,16 +1,11 @@
-
 name: PredictMaint - Continuous Training
-
 on:
   push:
     branches:
       - feature/continuous-training
-
   pull_request:
     branches:
       - dev
-
-  
   workflow_dispatch:
     inputs:
       dataset_version:
@@ -21,7 +16,6 @@ on:
         options:
           - v1
           - v2
-
       ct_mode:
         description: "Continuous Training execution mode"
         required: true
@@ -30,67 +24,52 @@ on:
         options:
           - validate-only
           - train-and-check
-
 permissions:
   contents: read
-
 jobs:
   ml-tests:
     name: ML automated tests
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-
       - name: Check Python syntax
         run: python -m compileall -q ml
-
       - name: Run automated ML tests
         run: python -m pytest tests/ -v
-
-
   # ============================================
   # 2. DVC / AZURE DATA VALIDATION
   # ============================================
-
   data-validation:
     name: DVC Azure data validation
     runs-on: ubuntu-latest
     needs: ml-tests
-
     if: >-
       github.repository == 'eugeniettc/final-project-ml-in-prod' &&
       github.ref == 'refs/heads/feature/continuous-training' &&
       (github.event_name == 'push' ||
        github.event_name == 'workflow_dispatch')
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-
       - name: Pull datasets from Azure with DVC
         env:
           AZURE_STORAGE_SAS_TOKEN: ${{ secrets.AZURE_STORAGE_SAS_TOKEN }}
@@ -99,60 +78,47 @@ jobs:
             echo "::error::Azure SAS token is missing"
             exit 1
           fi
-
           dvc pull -r myazure
           dvc status
-
       - name: Validate dataset v1
         if: github.event_name == 'push' || inputs.dataset_version == 'v1'
         run: |
           python -m ml.retrain --dataset-version v1 --validate-only
-
       - name: Validate dataset v2
         if: github.event_name == 'push' || inputs.dataset_version == 'v2'
         run: |
           python -m ml.retrain --dataset-version v2 --validate-only
-
       - name: Confirm all datasets are available
         run: |
           test -f data/releases/v1/train.csv
           test -f data/releases/v2/train.csv
           test -f data/splits/validation.csv
           test -f data/splits/test.csv
-
           echo "All required datasets are available."
-
-
   # ============================================
   # 3. MLFLOW MODEL REGISTRY VERIFICATION
   # ============================================
-
   mlflow-registry-check:
     name: MLflow champion verification
     runs-on: ubuntu-latest
     needs: [ml-tests, data-validation]
-
     if: >-
       github.repository == 'eugeniettc/final-project-ml-in-prod' &&
       github.ref == 'refs/heads/feature/continuous-training' &&
       (github.event_name == 'push' ||
        github.event_name == 'workflow_dispatch')
-       
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-
       - name: Install MLflow
         run: |
           python -m pip install --upgrade pip
           python -m pip install mlflow
-
       - name: Verify champion in MLflow Registry
         env:
           MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
@@ -162,41 +128,30 @@ jobs:
           python - <<'PY'
           import os
           from mlflow import MlflowClient
-
           if not os.getenv("MLFLOW_TRACKING_PASSWORD"):
               raise RuntimeError("DAGSHUB_TOKEN is missing")
-
           MODEL_NAME = "predictmaint-ai"
-
           print("\n=== MLFLOW REGISTRY VERIFICATION ===")
-
           client = MlflowClient()
-
           champion = client.get_model_version_by_alias(
               MODEL_NAME,
               "champion",
           )
-
           print("Model:", champion.name)
           print("Champion version:", champion.version)
           print("Status:", champion.status)
-
           if champion.status != "READY":
               raise RuntimeError("Champion is not READY")
-
           print("\nMLFLOW CHAMPION VERIFICATION PASSED!")
           print("Registry was not modified.")
           PY
-
   # ============================================
   # 4. CONTROLLED CONTINUOUS TRAINING DRY-RUN
   # ============================================
-
   ct-dry-run:
     name: Continuous Training dry-run
     runs-on: ubuntu-latest
     needs: [data-validation, mlflow-registry-check]
-
     if: >-
       github.repository == 'eugeniettc/final-project-ml-in-prod' &&
       github.ref == 'refs/heads/feature/continuous-training' &&
@@ -210,30 +165,36 @@ jobs:
           contains(github.event.head_commit.message, '[run-ct-dry-run]')
         )
       )
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-
       - name: Download training data
         env:
           AZURE_STORAGE_SAS_TOKEN: ${{ secrets.AZURE_STORAGE_SAS_TOKEN }}
         run: dvc pull -r myazure
-
-      
+      - name: Decide whether retraining is needed
+        id: retrain_gate
+        env:
+          MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
+          MLFLOW_TRACKING_USERNAME: ${{ vars.DAGSHUB_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+          DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+          DATASET_VERSION: ${{ inputs.dataset_version || 'v2' }}
+        run: |
+          python -m ml.check_retraining \
+            --dataset-version "$DATASET_VERSION"
       - name: Train and evaluate candidate
         id: train_candidate
+        if: steps.retrain_gate.outputs.decision == 'TRAIN'
         env:
           MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
           MLFLOW_TRACKING_USERNAME: ${{ vars.DAGSHUB_USERNAME }}
@@ -242,40 +203,32 @@ jobs:
           DATASET_VERSION: ${{ inputs.dataset_version || 'v2' }}
         run: |
           set -o pipefail
-
           python -m ml.retrain --dataset-version "$DATASET_VERSION" 2>&1 | tee ct-output.log
-
           python - <<'PY'
           import os
           import re
           from pathlib import Path
-
           logs = Path("ct-output.log").read_text()
-
           matches = re.findall(
               r"^MLflow Run ID:\s*([a-f0-9]{32})\s*$",
               logs,
               re.MULTILINE,
           )
-
           if len(matches) != 1:
               raise RuntimeError(
                   "Could not identify exactly one CT run ID"
               )
-
           run_id = matches[0]
-
           with open(
               os.environ["GITHUB_OUTPUT"],
               "a",
               encoding="utf-8",
           ) as output:
               output.write(f"run_id={run_id}\n")
-
           print("CT Run ID captured successfully.")
           PY
-
       - name: Verify candidate promotion decision
+        if: steps.retrain_gate.outputs.decision == 'TRAIN'
         env:
           MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
           MLFLOW_TRACKING_USERNAME: ${{ vars.DAGSHUB_USERNAME }}
@@ -286,38 +239,39 @@ jobs:
           python -m ml.promote_candidate \
             --run-id "$CT_RUN_ID" \
             --model-name predictmaint-ai
-
-
+      - name: Report skipped training
+        if: steps.retrain_gate.outputs.decision == 'SKIPPED'
+        env:
+          SKIP_REASON: ${{ steps.retrain_gate.outputs.reason }}
+        run: |
+          echo "=== CONTINUOUS TRAINING SKIPPED ==="
+          echo "Reason: $SKIP_REASON"
+          echo "### Continuous Training: SKIPPED" >> "$GITHUB_STEP_SUMMARY"
+          echo "Reason: $SKIP_REASON" >> "$GITHUB_STEP_SUMMARY"
   # ============================================
   # 5. PROMOTION PREFLIGHT FROM EXISTING RUN
   # ============================================
-
   promotion-preflight:
     name: Existing MLflow run promotion check
     runs-on: ubuntu-latest
     needs: mlflow-registry-check
-
     if: >-
       github.repository == 'eugeniettc/final-project-ml-in-prod' &&
       github.ref == 'refs/heads/feature/continuous-training' &&
       github.event_name == 'push' &&
       contains(github.event.head_commit.message, '[verify-promotion]')
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-
       - name: Verify historical CT rejection
         env:
           MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
@@ -328,38 +282,30 @@ jobs:
           python -m ml.promote_candidate \
             --run-id de410647f3f94c14a56db7b1940d0977 \
             --model-name predictmaint-ai
-
-
   # ============================================
   # 6. CONTROLLED DEMO PROMOTION
   # ============================================
-
   demo-promotion:
     name: Controlled MLflow demo promotion
     runs-on: ubuntu-latest
     needs: mlflow-registry-check
-
     if: >-
       github.repository == 'eugeniettc/final-project-ml-in-prod' &&
       github.ref == 'refs/heads/feature/continuous-training' &&
       github.event_name == 'push' &&
       contains(github.event.head_commit.message, '[demo-promote]')
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-
       - name: Verify initial registry state
         env:
           MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
@@ -368,27 +314,20 @@ jobs:
         run: |
           python - <<'PY'
           from mlflow import MlflowClient
-
           client = MlflowClient()
-
           prod = client.get_model_version_by_alias(
               "predictmaint-ai", "champion"
           )
-
           demo = client.get_model_version_by_alias(
               "predictmaint-ai-ct-demo-henri-fixed",
               "champion",
           )
-
           print("Production champion:", prod.version)
           print("Demo champion:", demo.version)
-
           assert str(prod.version) == "2"
           assert str(demo.version) == "1"
-
           print("Initial registry state verified.")
           PY
-
       - name: Execute approved demo promotion
         env:
           MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
@@ -400,7 +339,6 @@ jobs:
             --run-id 96adcb12ccbf4146a3b849a83de2dbd3 \
             --model-name predictmaint-ai-ct-demo-henri-fixed \
             --execute
-
       - name: Verify demo promotion and production safety
         env:
           MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
@@ -409,26 +347,21 @@ jobs:
         run: |
           python - <<'PY'
           from mlflow import MlflowClient
-
           client = MlflowClient()
-
           demo = client.get_model_version_by_alias(
               "predictmaint-ai-ct-demo-henri-fixed",
               "champion",
           )
-
           prod = client.get_model_version_by_alias(
               "predictmaint-ai",
               "champion",
           )
-
           assert int(demo.version) > 1
           assert demo.status == "READY"
           assert demo.tags.get("ct_run_id") == (
               "96adcb12ccbf4146a3b849a83de2dbd3"
           )
           assert str(prod.version) == "2"
-
           print("\nDEMO PROMOTION VERIFIED!")
           print("Demo champion:", demo.version)
           print("Production champion:", prod.version)
