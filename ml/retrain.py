@@ -8,7 +8,7 @@ from ml.promotion_policy import (
 import dagshub
 import pandas as pd
 from mlflow import MlflowClient
-
+import argparse
 
 # ============================================
 # 1. CONFIGURATION
@@ -16,7 +16,31 @@ from mlflow import MlflowClient
 
 ROOT = Path(__file__).resolve().parents[1]
 
-TRAIN_V2_PATH = ROOT / "data/releases/v2/train.csv"
+# Select the dataset release from the command line
+parser = argparse.ArgumentParser(
+    description="PredictMaint AI Continuous Training"
+)
+
+parser.add_argument(
+    "--dataset-version",
+    choices=["v1", "v2"],
+    required=True,
+    help="Training dataset version",
+)
+
+parser.add_argument(
+    "--validate-only",
+    action="store_true",
+    help="Validate datasets without training or contacting MLflow",
+)
+
+args = parser.parse_args()
+
+DATASET_VERSION = args.dataset_version
+
+TRAIN_PATH = (
+    ROOT / "data" / "releases" / DATASET_VERSION / "train.csv"
+)
 VALIDATION_PATH = ROOT / "data/splits/validation.csv"
 TEST_PATH = ROOT / "data/splits/test.csv"
 
@@ -67,7 +91,10 @@ def load_and_validate(path, name):
 
 print("\n=== DATA VALIDATION ===")
 
-train = load_and_validate(TRAIN_V2_PATH, "Train v2")
+train = load_and_validate(
+    TRAIN_PATH,
+    f"Train {DATASET_VERSION}",
+)
 validation = load_and_validate(VALIDATION_PATH, "Validation")
 test = load_and_validate(TEST_PATH, "Test")
 
@@ -85,7 +112,12 @@ if (
 
 print("Data validation PASSED!")
 print("No overlapping UIDs.")
-
+if args.validate_only:
+    print(
+        f"\nVALIDATION ONLY PASSED for {DATASET_VERSION}"
+    )
+    print("No training or registry modification performed.")
+    raise SystemExit(0)
 
 # ============================================
 # 3. CONNECT TO MLFLOW
@@ -165,7 +197,7 @@ y_test = test[TARGET]
 # 7. TRAIN CANDIDATE ON DATASET V2
 # ============================================
 
-print("\n=== TRAINING CANDIDATE V2 ===")
+print(f"\n=== TRAINING CANDIDATE {DATASET_VERSION.upper()} ===")
 
 numeric_features = [
     "Air temperature",
@@ -266,8 +298,14 @@ candidate_metrics = evaluate_model(
 
 comparison = pd.DataFrame(
     [
-        {"model": "Champion v1", **champion_metrics},
-        {"model": "Candidate v2", **candidate_metrics},
+        {
+            "model": f"Champion v{champion_version}",
+            **champion_metrics,
+        },
+        {
+            "model": f"Candidate {DATASET_VERSION}",
+            **candidate_metrics,
+        },
     ]
 )
 
@@ -327,7 +365,13 @@ from mlflow.models import infer_signature
 print("\n=== LOGGING CONTINUOUS TRAINING ===")
 
 # Identify the exact dataset used.
-dvc_file = ROOT / "data/releases/v2/train.csv.dvc"
+dvc_file = (
+    ROOT
+    / "data"
+    / "releases"
+    / DATASET_VERSION
+    / "train.csv.dvc"
+)
 dvc_content = dvc_file.read_text()
 
 match = re.search(
@@ -336,7 +380,9 @@ match = re.search(
 )
 
 if match is None:
-    raise ValueError("Cannot find v2 DVC hash.")
+    raise ValueError(
+        f"Cannot find {DATASET_VERSION} DVC hash."
+    )
 
 dvc_hash = match.group(1)
 
@@ -353,14 +399,14 @@ mlflow.set_experiment(
 )
 
 with mlflow.start_run(
-    run_name="ct-dataset-v2-dry-run"
+    run_name=f"ct-dataset-{DATASET_VERSION}-dry-run"
 ) as run:
 
     # 1. Reproducibility metadata.
     mlflow.set_tags({
         "git_commit": git_sha,
-        "dataset_version": "v2",
-        "dataset_git_tag": "data-v2",
+        "dataset_version": DATASET_VERSION,
+        "dataset_git_tag": f"data-{DATASET_VERSION}",
         "dataset_dvc_md5": dvc_hash,
         "champion_version": champion_version,
         "run_type": "continuous_training",
@@ -399,7 +445,7 @@ with mlflow.start_run(
 
     # 4. Promotion decision artifact.
     decision = {
-        "dataset_version": "v2",
+        "dataset_version": DATASET_VERSION,
         "champion_version": champion_version,
         "candidate_status": (
             "ELIGIBLE" if approved else "REJECTED"
