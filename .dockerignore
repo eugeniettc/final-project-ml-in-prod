@@ -1,0 +1,32 @@
+# Données brutes et releases (Strictement interdit dans l'image par le sujet)
+data/
+
+# Scripts de préparation et d'entraînement (développement)
+ml/
+
+# Fichiers de configuration DVC et Git
+.git/
+.github/
+.dvc/
+.dvcignore
+.gitignore
+
+# Environnements virtuels
+.venv/
+venv/
+env/
+
+# Fichiers de cache Python et tests
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+tests/
+
+# Secrets et variables d'environnement locales
+.env
+*.env
+
+# Fichiers système
+.DS_Store
+Thumbs.db
