@@ -218,7 +218,9 @@ jobs:
           AZURE_STORAGE_SAS_TOKEN: ${{ secrets.AZURE_STORAGE_SAS_TOKEN }}
         run: dvc pull -r myazure
 
+      
       - name: Train and evaluate candidate
+        id: train_candidate
         env:
           MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
           MLFLOW_TRACKING_USERNAME: ${{ vars.DAGSHUB_USERNAME }}
@@ -226,4 +228,48 @@ jobs:
           DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
           DATASET_VERSION: ${{ inputs.dataset_version || 'v2' }}
         run: |
-          python -m ml.retrain --dataset-version "$DATASET_VERSION"
+          set -o pipefail
+
+          python -m ml.retrain --dataset-version "$DATASET_VERSION" 2>&1 | tee ct-output.log
+
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          logs = Path("ct-output.log").read_text()
+
+          matches = re.findall(
+              r"^MLflow Run ID:\s*([a-f0-9]{32})\s*$",
+              logs,
+              re.MULTILINE,
+          )
+
+          if len(matches) != 1:
+              raise RuntimeError(
+                  "Could not identify exactly one CT run ID"
+              )
+
+          run_id = matches[0]
+
+          with open(
+              os.environ["GITHUB_OUTPUT"],
+              "a",
+              encoding="utf-8",
+          ) as output:
+              output.write(f"run_id={run_id}\n")
+
+          print("CT Run ID captured successfully.")
+          PY
+
+      - name: Verify candidate promotion decision
+        env:
+          MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
+          MLFLOW_TRACKING_USERNAME: ${{ vars.DAGSHUB_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+          DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+          CT_RUN_ID: ${{ steps.train_candidate.outputs.run_id }}
+        run: |
+          python -m ml.promote_candidate \
+            --run-id "$CT_RUN_ID" \
+            --model-name predictmaint-ai
