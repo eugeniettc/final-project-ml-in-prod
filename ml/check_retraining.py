@@ -11,6 +11,7 @@ import dagshub
 from mlflow import MlflowClient
 import os
 
+import mlflow
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_NAME = "predictmaint-ai"
 
@@ -125,6 +126,49 @@ def main():
     print("Decision:", decision)
     print("Reason:", reason)
     print("No registry modification performed.")
+
+
+    # Record skipped retraining decisions in MLflow.
+    if decision == "SKIPPED":
+        mlflow.set_experiment(
+            "predictmaint-ai-continuous-training"
+        )
+
+        with mlflow.start_run(
+            run_name=f"ct-{selected_version}-skipped"
+        ) as audit_run:
+
+            mlflow.set_tags({
+                "run_type": "retraining_gate",
+                "retraining_decision": "SKIPPED",
+                "dataset_version": selected_version,
+                "dataset_dvc_md5": selected_hash,
+                "champion_version": str(champion.version),
+                "champion_dataset_version": champion_dataset,
+            })
+
+            mlflow.log_dict(
+                {
+                    "decision": "SKIPPED",
+                    "reason": reason,
+                    "selected_dataset": selected_version,
+                    "selected_dvc_hash": selected_hash,
+                    "champion_version": str(champion.version),
+                    "champion_run_id": champion.run_id,
+                    "champion_dataset": champion_dataset,
+                    "champion_dvc_hash": champion_hash,
+                    "training_executed": False,
+                    "registry_modified": False,
+                },
+                "evaluation/retraining_decision.json",
+            )
+
+            print(
+                "MLflow audit Run ID:",
+                audit_run.info.run_id,
+            )
+
+        print("SKIPPED decision recorded in MLflow.")
 
 
     github_output = os.environ.get("GITHUB_OUTPUT")
