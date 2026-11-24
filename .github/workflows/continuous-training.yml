@@ -10,16 +10,26 @@ on:
     branches:
       - dev
 
+  
   workflow_dispatch:
     inputs:
       dataset_version:
-        description: "Dataset version to validate"
+        description: "Dataset version"
         required: true
         type: choice
         default: v2
         options:
           - v1
           - v2
+
+      ct_mode:
+        description: "Continuous Training execution mode"
+        required: true
+        type: choice
+        default: validate-only
+        options:
+          - validate-only
+          - train-and-check
 
 permissions:
   contents: read
@@ -191,7 +201,10 @@ jobs:
       github.repository == 'eugeniettc/final-project-ml-in-prod' &&
       github.ref == 'refs/heads/feature/continuous-training' &&
       (
-        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'workflow_dispatch' &&
+          inputs.ct_mode == 'train-and-check'
+        ) ||
         (
           github.event_name == 'push' &&
           contains(github.event.head_commit.message, '[run-ct-dry-run]')
