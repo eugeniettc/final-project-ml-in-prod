@@ -30,9 +30,9 @@ mlflow.db/
 .dvc/tmp/
 .dvc/cache/
 
-# Data files (managed by DVC)
-data/**/*.csv
-data/**/*.parquet
+# Original raw data - not committed to Git
+data/raw/*.csv
+data/raw/*.parquet
 
 # macOS
 .DS_Store
