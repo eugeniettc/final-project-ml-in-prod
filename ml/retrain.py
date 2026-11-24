@@ -1,5 +1,10 @@
 from pathlib import Path
-
+from ml.promotion_policy import (
+    MIN_AP,
+    MIN_AP_IMPROVEMENT,
+    MIN_RECALL,
+    evaluate_promotion,
+)
 import dagshub
 import pandas as pd
 from mlflow import MlflowClient
@@ -273,24 +278,20 @@ print(comparison.round(4).to_string(index=False))
 # 10. APPLY PROMOTION RULES
 # ============================================
 
-# Thresholds defined in README_experiments.md
-# BEFORE evaluating the v2 candidate.
-
-MIN_AP = 0.40
-MIN_AP_IMPROVEMENT = 0.02
-MIN_RECALL = 0.50
-
 champion_ap = champion_metrics["average_precision"]
 candidate_ap = candidate_metrics["average_precision"]
 candidate_recall = candidate_metrics["recall"]
 
-ap_improvement = candidate_ap - champion_ap
+# Use the shared, tested promotion policy.
+policy_result = evaluate_promotion(
+    champion_ap=champion_ap,
+    candidate_ap=candidate_ap,
+    candidate_recall=candidate_recall,
+)
 
-checks = {
-    "minimum_average_precision": candidate_ap >= MIN_AP,
-    "minimum_improvement": ap_improvement >= MIN_AP_IMPROVEMENT,
-    "minimum_recall": candidate_recall >= MIN_RECALL,
-}
+approved = policy_result["approved"]
+checks = policy_result["checks"]
+ap_improvement = policy_result["ap_improvement"]
 
 print("\n=== PROMOTION QUALITY GATES ===")
 print(f"Champion AP: {champion_ap:.4f}")
@@ -300,18 +301,13 @@ print(f"AP improvement: {ap_improvement:+.4f}")
 for rule, passed in checks.items():
     print(f"{rule}: {'PASS' if passed else 'FAIL'}")
 
-approved = all(checks.values())
-
 print("\n=== DRY-RUN DECISION ===")
 
 if approved:
     print("PROMOTION ELIGIBLE: candidate passes all gates.")
 else:
     print("REJECT: candidate does not meet all gates.")
-    print(
-        "Failed gates:",
-        [rule for rule, passed in checks.items() if not passed],
-    )
+    print("Failed gates:", policy_result["failed_gates"])
 
 print("Champion alias has NOT been modified.")
 
