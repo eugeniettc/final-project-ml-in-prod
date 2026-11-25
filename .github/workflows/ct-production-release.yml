@@ -1,0 +1,135 @@
+
+name: PredictMaint - CT Production Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ct_run_id:
+        description: "MLflow Continuous Training run ID"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: predictmaint-production
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: CT production preflight
+    if: >-
+      github.repository == 'eugeniettc/final-project-ml-in-prod' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    env:
+      CT_RUN_ID: ${{ inputs.ct_run_id }}
+      PRODUCTION_URL: ${{ vars.RENDER_PRODUCTION_URL }}
+      MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
+      MLFLOW_TRACKING_USERNAME: ${{ vars.DAGSHUB_USERNAME }}
+      MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+      DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+
+    steps:
+      - name: Checkout validated production commit
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run automated tests
+        env:
+          ENABLE_MOCK_MODEL: "true"
+        run: python -m pytest tests/ -q
+
+      - name: Read current MLflow champion
+        id: champion
+        run: |
+          python - <<'PY'
+          import os
+          from mlflow import MlflowClient
+
+          if not os.getenv("MLFLOW_TRACKING_PASSWORD"):
+              raise RuntimeError("Missing DagsHub credentials")
+
+          model = MlflowClient().get_model_version_by_alias(
+              "predictmaint-ai", "champion"
+          )
+
+          if model.status != "READY":
+              raise RuntimeError("Champion is not READY")
+
+          print("Current champion:", model.version)
+
+          with open(
+              os.environ["GITHUB_OUTPUT"],
+              "a",
+              encoding="utf-8",
+          ) as output:
+              output.write(f"version={model.version}\n")
+          PY
+
+      - name: Verify current production application
+        env:
+          EXPECTED_VERSION: ${{ steps.champion.outputs.version }}
+        run: |
+          python -m ml.verify_deployment \
+            --url "$PRODUCTION_URL" \
+            --expected-version "$EXPECTED_VERSION" \
+            --attempts 5
+
+      - name: Evaluate candidate without promotion
+        id: preflight
+        run: |
+          python -m ml.promote_candidate \
+            --run-id "$CT_RUN_ID" \
+            --model-name predictmaint-ai
+
+      - name: Ensure registry was not modified
+        env:
+          EXPECTED_VERSION: ${{ steps.champion.outputs.version }}
+        run: |
+          python - <<'PY'
+          import os
+          from mlflow import MlflowClient
+
+          actual = MlflowClient().get_model_version_by_alias(
+              "predictmaint-ai", "champion"
+          )
+
+          expected = os.environ["EXPECTED_VERSION"]
+
+          if str(actual.version) != expected:
+              raise RuntimeError(
+                  "Champion changed during preflight"
+              )
+
+          print("Production champion unchanged:", expected)
+          PY
+
+      - name: Write audit summary
+        if: success()
+        env:
+          DECISION: ${{ steps.preflight.outputs.promotion_decision }}
+          EXECUTED: ${{ steps.preflight.outputs.promotion_executed }}
+        run: |
+          test "$EXECUTED" = "false"
+
+          {
+            echo "## CT Production Preflight"
+            echo ""
+            echo "- CT Run: $CT_RUN_ID"
+            echo "- Candidate decision: $DECISION"
+            echo "- Promotion executed: $EXECUTED"
+            echo "- Production model unchanged: yes"
+          } >> "$GITHUB_STEP_SUMMARY"
