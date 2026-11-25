@@ -1,0 +1,311 @@
+
+name: PredictMaint - Production Deployment
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: predictmaint-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate production release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Check Python syntax
+        run: python -m compileall -q app ml tests
+
+      - name: Ruff critical checks
+        run: python -m ruff check app ml tests --select E9,F63,F7,F82
+
+      - name: Automated tests
+        env:
+          ENABLE_MOCK_MODEL: "true"
+        run: python -m pytest tests/ -v
+
+      - name: Build production Docker image
+        run: docker build -t predictmaint-ai:production .
+
+      - name: Start test container
+        run: |
+          docker run -d \
+            --name predictmaint-production-test \
+            -p 8000:8000 \
+            -e ENABLE_MOCK_MODEL=true \
+            predictmaint-ai:production
+
+      - name: Verify Docker application
+        run: |
+          python - <<'PY'
+          import json
+          import time
+          from urllib.request import Request, urlopen
+
+          base = "http://localhost:8000"
+
+          for attempt in range(30):
+              try:
+                  with urlopen(base + "/ready", timeout=5) as r:
+                      assert json.load(r)["status"] == "ready"
+                  break
+              except Exception:
+                  if attempt == 29:
+                      raise
+                  time.sleep(2)
+
+          with urlopen(base + "/model-info") as r:
+              info = json.load(r)
+
+          assert info["model_version"] == "mock-1.0"
+
+          payload = {
+              "type": "L",
+              "air_temperature": 298.1,
+              "process_temperature": 308.6,
+              "rotational_speed": 1500,
+              "torque": 40,
+              "tool_wear": 20,
+          }
+
+          req = Request(
+              base + "/predict",
+              data=json.dumps(payload).encode(),
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+
+          with urlopen(req) as r:
+              prediction = json.load(r)
+
+          assert prediction["failure_prediction"] in (0, 1)
+          assert 0 <= prediction["risk_score"] <= 1
+
+          print("Docker production smoke tests PASSED!")
+          PY
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs predictmaint-production-test || true
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f predictmaint-production-test || true
+
+  deploy-production:
+    name: Deploy and verify Render production
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    if: >-
+      github.repository == 'eugeniettc/final-project-ml-in-prod' &&
+      github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Trigger Render and wait for live deployment
+        env:
+          RENDER_HOOK: ${{ secrets.RENDER_PRODUCTION_DEPLOY_HOOK_URL }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ vars.RENDER_PRODUCTION_SERVICE_ID }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import time
+          from urllib.parse import (
+              parse_qsl, urlencode, urlsplit, urlunsplit
+          )
+          from urllib.request import Request, urlopen
+
+          hook = os.getenv("RENDER_HOOK")
+          api_key = os.getenv("RENDER_API_KEY")
+          service_id = os.getenv("RENDER_SERVICE_ID")
+          sha = os.environ["EXPECTED_SHA"]
+
+          if not all([hook, api_key, service_id]):
+              raise RuntimeError(
+                  "Missing Render production configuration"
+              )
+
+          parts = urlsplit(hook)
+          query = dict(parse_qsl(parts.query))
+          query["ref"] = sha
+
+          deploy_url = urlunsplit((
+              parts.scheme,
+              parts.netloc,
+              parts.path,
+              urlencode(query),
+              parts.fragment,
+          ))
+
+          request = Request(
+              deploy_url,
+              data=b"",
+              method="POST",
+          )
+
+          with urlopen(request, timeout=30) as response:
+              if response.status != 200:
+                  raise RuntimeError(
+                      "Render did not start a new deployment"
+                  )
+              deploy = json.load(response)
+
+          deploy_id = deploy["deploy"]["id"]
+          print("Triggered Render deployment:", deploy_id)
+
+          api_url = (
+              "https://api.render.com/v1/services/"
+              f"{service_id}/deploys/{deploy_id}"
+          )
+
+          for attempt in range(60):
+              request = Request(
+                  api_url,
+                  headers={
+                      "Authorization": f"Bearer {api_key}",
+                      "Accept": "application/json",
+                  },
+              )
+
+              with urlopen(request, timeout=30) as response:
+                  status_info = json.load(response)
+
+              status = status_info["status"]
+              print(f"Deployment check {attempt + 1}: {status}")
+
+              if status == "live":
+                  deployed_sha = (
+                      status_info.get("commit") or {}
+                  ).get("id")
+
+                  if deployed_sha != sha:
+                      raise RuntimeError(
+                          "Deployed Git commit does not match "
+                          "the validated commit"
+                      )
+
+                  print("Expected Git commit is LIVE!")
+                  break
+
+              if status in (
+                  "build_failed",
+                  "update_failed",
+                  "pre_deploy_failed",
+                  "canceled",
+                  "deactivated",
+              ):
+                  raise RuntimeError(
+                      f"Render deployment failed: {status}"
+                  )
+
+              time.sleep(15)
+          else:
+              raise TimeoutError(
+                  "Render deployment did not become live"
+              )
+          PY
+
+      - name: Verify public API and MLflow champion
+        env:
+          PRODUCTION_URL: ${{ vars.RENDER_PRODUCTION_URL }}
+          MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
+          MLFLOW_TRACKING_USERNAME: ${{ vars.DAGSHUB_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
+          python -m pip install mlflow
+          python - <<'PY'
+          import json
+          import os
+          import time
+          from urllib.request import Request, urlopen
+          from mlflow import MlflowClient
+
+          base = os.getenv("PRODUCTION_URL", "").rstrip("/")
+          if not base or not os.getenv("MLFLOW_TRACKING_PASSWORD"):
+              raise RuntimeError(
+                  "Missing production URL or MLflow credentials"
+              )
+
+          champion = MlflowClient().get_model_version_by_alias(
+              "predictmaint-ai", "champion"
+          )
+          expected_version = str(champion.version)
+
+          def fetch(path, payload=None):
+              data = (
+                  json.dumps(payload).encode()
+                  if payload is not None else None
+              )
+              request = Request(
+                  base + path,
+                  data=data,
+                  headers=(
+                      {"Content-Type": "application/json"}
+                      if data is not None else {}
+                  ),
+                  method="POST" if data is not None else "GET",
+              )
+              with urlopen(request, timeout=30) as response:
+                  assert response.status == 200
+                  return json.load(response)
+
+          for attempt in range(12):
+              try:
+                  ready = fetch("/ready")
+                  info = fetch("/model-info")
+
+                  assert ready["status"] == "ready"
+                  assert info["status"] == "loaded"
+                  assert info["model_name"] == "predictmaint-ai"
+                  assert info["alias"] == "champion"
+                  assert info["model_version"] == expected_version
+                  assert ready["loaded_version"] == expected_version
+
+                  prediction = fetch("/predict", {
+                      "type": "L",
+                      "air_temperature": 298.1,
+                      "process_temperature": 308.6,
+                      "rotational_speed": 1500,
+                      "torque": 40,
+                      "tool_wear": 20,
+                  })
+
+                  assert prediction["failure_prediction"] in (0, 1)
+                  assert 0 <= prediction["risk_score"] <= 1
+                  assert prediction["model_version"] == expected_version
+
+                  print("PRODUCTION SMOKE TESTS PASSED!")
+                  print("Loaded champion version:", expected_version)
+                  break
+
+              except Exception as exc:
+                  print(f"Check {attempt + 1}/12 failed: {exc}")
+                  if attempt == 11:
+                      raise
+                  time.sleep(10)
+          PY
