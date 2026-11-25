@@ -42,9 +42,7 @@ def validate_rollback_policy(champion, target):
             "Current champion has no approved CT provenance."
         )
 
-    previous_version = tags.get(
-        "previous_champion_version"
-    )
+    previous_version = tags.get("previous_champion_version")
 
     if previous_version != str(target.version):
         raise RuntimeError(
@@ -62,6 +60,12 @@ def main():
     parser.add_argument("--expected-current", type=int, required=True)
     parser.add_argument("--execute", action="store_true")
 
+    parser.add_argument(
+        "--model-name",
+        default=MODEL_NAME,
+        help="MLflow registered model name",
+    )
+
     args = parser.parse_args()
 
     dagshub.init(
@@ -74,7 +78,7 @@ def main():
 
     # 1. Check the current champion
     champion = client.get_model_version_by_alias(
-        MODEL_NAME, "champion"
+        args.model_name, "champion"
     )
 
     current_version = int(champion.version)
@@ -87,14 +91,14 @@ def main():
 
     # 2. Check the target model version
     target = client.get_model_version(
-        MODEL_NAME, str(args.to_version)
+        args.model_name, str(args.to_version)
     )
 
     validate_rollback_policy(champion, target)
 
     # 3. Load and test the target BEFORE modifying the alias
     model = mlflow.sklearn.load_model(
-        f"models:/{MODEL_NAME}/{args.to_version}"
+        f"models:/{args.model_name}/{args.to_version}"
     )
 
     X = pd.read_csv(
@@ -110,6 +114,7 @@ def main():
         raise RuntimeError("Target model inference failed.")
 
     print("\n=== ROLLBACK PRECHECK ===")
+    print("Model name:", args.model_name)
     print("Current champion:", current_version)
     print("Target version:", args.to_version)
     print("Target status:", target.status)
@@ -124,7 +129,7 @@ def main():
     # Verify that the champion has not changed
     # while the rollback prechecks were running.
     latest_champion = client.get_model_version_by_alias(
-        MODEL_NAME, "champion"
+        args.model_name, "champion"
     )
 
     if int(latest_champion.version) != current_version:
@@ -133,14 +138,14 @@ def main():
         )
     # 5. Change the alias
     client.set_registered_model_alias(
-        name=MODEL_NAME,
+        name=args.model_name,
         alias="champion",
         version=str(args.to_version),
     )
 
     # 6. Verify the alias
     new_champion = client.get_model_version_by_alias(
-        MODEL_NAME, "champion"
+        args.model_name, "champion"
     )
 
     if int(new_champion.version) != args.to_version:
@@ -152,7 +157,7 @@ def main():
     print("Previous version:", current_version)
     print("New champion:", new_champion.version)
 
-    # 7. Record the operation in MLflow
+    # 7. Enregistrer le rollback dans MLflow
     mlflow.set_experiment(
         "predictmaint-ai-continuous-training"
     )
@@ -161,7 +166,7 @@ def main():
         run_name=f"rollback-{current_version}-to-{args.to_version}"
     ):
         mlflow.log_params({
-            "model_name": MODEL_NAME,
+            "model_name": args.model_name,
             "previous_version": current_version,
             "restored_version": args.to_version,
         })
