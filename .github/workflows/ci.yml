@@ -1,0 +1,134 @@
+
+name: PredictMaint - CI
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - staging
+      - main
+  push:
+    branches:
+      - dev
+      - staging
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Python tests and lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Check Python syntax
+        run: python -m compileall -q app ml tests
+
+      - name: Run Ruff critical lint checks
+        run: |
+          python -m ruff check app ml tests --select E9,F63,F7,F82
+
+      - name: Run automated tests
+        env:
+          ENABLE_MOCK_MODEL: "true"
+        run: python -m pytest tests/ -v
+
+  docker-smoke:
+    name: Docker build and smoke tests
+    runs-on: ubuntu-latest
+    needs: tests
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t predictmaint-ai:ci .
+
+      - name: Start test container
+        run: |
+          docker run -d \
+            --name predictmaint-ci \
+            -p 8000:8000 \
+            -e ENABLE_MOCK_MODEL=true \
+            predictmaint-ai:ci
+
+      - name: Wait for application readiness
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://localhost:8000/ready; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker logs predictmaint-ci
+          exit 1
+
+      - name: Test API endpoints
+        run: |
+          python - <<'PY'
+          import json
+          from urllib.request import Request, urlopen
+
+          base = "http://localhost:8000"
+
+          with urlopen(f"{base}/ready") as response:
+              ready = json.load(response)
+
+          assert ready["status"] == "ready"
+
+          with urlopen(f"{base}/model-info") as response:
+              info = json.load(response)
+
+          assert info["model_version"] == "mock-1.0"
+
+          payload = {
+              "type": "L",
+              "air_temperature": 298.1,
+              "process_temperature": 308.6,
+              "rotational_speed": 1500.0,
+              "torque": 40.0,
+              "tool_wear": 20.0,
+          }
+
+          request = Request(
+              f"{base}/predict",
+              data=json.dumps(payload).encode("utf-8"),
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+
+          with urlopen(request) as response:
+              prediction = json.load(response)
+
+          assert prediction["failure_prediction"] in [0, 1]
+          assert 0 <= prediction["risk_score"] <= 1
+          assert prediction["model_version"] == info["model_version"]
+
+          print("Docker API smoke tests PASSED!")
+          PY
+
+      - name: Print container logs on failure
+        if: failure()
+        run: docker logs predictmaint-ci || true
+
+      - name: Stop test container
+        if: always()
+        run: docker rm -f predictmaint-ci || true
