@@ -1,0 +1,77 @@
+name: PredictMaint - Production Model Monitor
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    - cron: "17,47 * * * *"
+
+  workflow_run:
+    workflows:
+      - "PredictMaint - CT Production Release"
+      - "PredictMaint - Production Deployment"
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: predictmaint-model-monitor
+  cancel-in-progress: false
+
+jobs:
+  verify-production-sync:
+    name: Verify MLflow and Render synchronization
+    runs-on: ubuntu-latest
+
+    if: >-
+      github.repository == 'eugeniettc/final-project-ml-in-prod'
+
+    env:
+      PRODUCTION_URL: ${{ vars.RENDER_PRODUCTION_URL }}
+
+      MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
+      MLFLOW_TRACKING_USERNAME: ${{ vars.DAGSHUB_USERNAME }}
+      MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install MLflow
+        run: |
+          python -m pip install mlflow
+
+      - name: Check production synchronization
+        run: |
+          python -m ml.check_production_sync \
+            --url "$PRODUCTION_URL"
+
+      - name: Write successful audit summary
+        if: success()
+        run: |
+          {
+            echo "## Production Model Synchronization"
+            echo ""
+            echo "Result: SYNCHRONIZED"
+            echo ""
+            echo "MLflow champion and Render model match."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report verification failure
+        if: failure()
+        run: |
+          {
+            echo "## Production Model Verification Failed"
+            echo ""
+            echo "Check MLflow alias, Render deployment"
+            echo "and application logs."
+            echo ""
+            echo "Manual investigation is required."
+          } >> "$GITHUB_STEP_SUMMARY"
