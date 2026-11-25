@@ -20,7 +20,7 @@ Start the stack:
 docker compose up --build -d
 ```
 
-- **API (`/health`, `/metrics`, `/docs`):** `http://localhost:8000`
+- **API (`/ready`, `/metrics`, `/docs`):** `http://localhost:8000`
 - **Prometheus:** `http://localhost:9090` (scrapes `api:8000/metrics` every 5s)
 - **Grafana:** `http://localhost:3000` (`admin` / `admin`) — import `monitoring/dashboard.json`
 

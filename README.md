@@ -9,7 +9,9 @@ PredictMaint AI is a Dockerized web application that estimates the probability o
 **Staging application:** [Render Staging](https://predictmaint-ai-staging.onrender.com/)
 **Experiment tracking and model registry:** [DagsHub / MLflow](https://dagshub.com/Abdel380/predictmaint-ai.mlflow/)
 
-> **Model status:** On November 25, 2026, the production deployment was verified to serve approved MLflow model `predictmaint-ai`, alias `champion`, version **2**. The live endpoints below report the version currently loaded; it may change after an approved release. The service is not considered ready if the real model fails to load.
+> **Production status (25 November 2026).** Render serves MLflow model `predictmaint-ai`, alias `champion`, version **1**. During the production rehearsal, the team promoted v3, verified it online, then deliberately restored v1 for the presentation. The final production monitor confirmed that Render and MLflow agreed. [Final synchronization check](https://github.com/eugeniettc/final-project-ml-in-prod/actions/runs/45719605125)
+
+The Git tag `v1.0-demo-stable` marks commit `b2044c0` on `main`. It preserves the repository snapshot. MLflow aliases and artifacts, data in Azure, and Render configuration and deployment state are managed separately. [Tagged code](https://github.com/eugeniettc/final-project-ml-in-prod/tree/v1.0-demo-stable)
 
 ## 1. What the application does
 
@@ -50,7 +52,7 @@ The response has the following structure (**illustrative schema; values depend o
   "failure_prediction": 0,
   "risk_score": 0.01,
   "model_name": "predictmaint-ai",
-  "model_version": "2"
+  "model_version": "1"
 }
 ```
 
@@ -81,23 +83,25 @@ flowchart TD
     U[User / browser] --> R[Render production: Docker + FastAPI]
     R --> API[Prediction API and web interface]
     API --> M[Loaded scikit-learn model]
-    Registry[DagsHub MLflow Model Registry\nchampion alias] -->|Resolve version and fetch artifact at startup| M
+    Registry[DagsHub MLflow Model Registry] -->|Resolve champion and load version at startup| M
     Data[UCI AI4I dataset] --> Prep[Dataset preparation / fixed evaluation splits]
-    Prep --> DVC[DVC snapshots: v1 and v2\nAzure Blob Storage]
+    Prep --> DVC[DVC snapshots v1 and v2 in Azure Blob Storage]
     DVC --> CT[GitHub Actions continuous training]
     CT --> Exp[MLflow runs: parameters, metrics, artifacts]
-    Exp --> Registry
-    GH[GitHub PRs and CI] --> Stage[Render staging]
-    GH --> R
-    Release[Protected CT release workflow] -->|Approved promotion + redeploy| Registry
-    Release --> R
-    R --> Obs[Structured logs / Prometheus metrics]
-    Obs --> Grafana[Grafana local monitoring stack]
+    Exp -.->|Operator supplies CT run ID| Release[CT Production Release on main]
+    Release -->|Human approval in production-ct then promote| Registry
+    Release -->|Redeploy and verify| R
+    StageCD[Staging deployment workflow] --> Stage[Render staging]
+    ProdCD[Production deployment workflow on main] --> R
+    Monitor[GitHub Actions production monitor] -->|Read champion| Registry
+    Monitor -->|Verify live version and prediction| R
+    Local[Local Compose API] -->|Expose metrics| Prom[Local Prometheus]
+    Prom --> Grafana[Local Grafana dashboard]
 ```
 
 **Technology stack:** Python, scikit-learn, FastAPI, Pydantic, Docker, DVC with Azure Blob Storage, MLflow Model Registry and Tracking on DagsHub, GitHub Actions, Render, Prometheus, Grafana, and structured logs.
 
-**Model loading contract:** At FastAPI startup, the service resolves the MLflow `champion` alias to a concrete model version and loads that exact artifact. It does **not** automatically hot-reload when the alias changes. A model change requires an application restart or redeployment, followed by readiness and live-prediction verification. Mock inference is explicitly enabled only for local tests (`ENABLE_MOCK_MODEL=true`).
+**Model loading contract:** At FastAPI startup, the service resolves the MLflow `champion` alias to a concrete model version and loads that exact artifact. It does **not** automatically hot-reload when the alias changes. A model change requires an application restart or redeployment, followed by readiness and live-prediction verification. Local development and CI smoke tests can opt into mock inference with `ENABLE_MOCK_MODEL=true`.
 
 ## 3. Reproduce the application locally
 
@@ -106,7 +110,7 @@ flowchart TD
 - Git, Python 3.11, and Docker
 - Internet access to reach the hosted model registry for **real** model inference
 - Authorized DagsHub/MLflow credentials for **real** model inference
-- Azure/DVC credentials only when reproducing data preparation or continuous training
+- Azure storage credentials to retrieve the versioned datasets with DVC
 
 ### Option A — Docker smoke test (mock model; no cloud credentials)
 
@@ -135,7 +139,7 @@ source .venv/bin/activate               # macOS / Linux
 pip install -r requirements.txt
 ```
 
-Set the following environment variables using your shell or a **local, Git-ignored** `.env` file (never commit credentials):
+From the repository root, save these settings in a local, Git-ignored `.env` file and replace the credential placeholders. The startup command below loads the settings before importing the application.
 
 ```dotenv
 MLFLOW_TRACKING_URI=https://dagshub.com/Abdel380/predictmaint-ai.mlflow
@@ -149,7 +153,7 @@ ENABLE_MOCK_MODEL=false
 Start and verify:
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --env-file .env --host 0.0.0.0 --port 8000
 # In another terminal:
 curl -f http://localhost:8000/model-info
 ```
@@ -178,7 +182,7 @@ The fixed validation and held-out test splits contain 2,000 records each. The te
 
 **Primary selection metric:** Average Precision (AP), appropriate for an imbalanced failure dataset (~3.39% failures). Higher is better. Supporting metrics include ROC-AUC, precision, recall and F1-score.
 
-The documented initial approval gates include AP >= 0.40, an absolute AP improvement of at least 0.02 against the champion, recall >= 0.50 at threshold 0.5, and successful model loading and inference. These are project-specific demonstration criteria, **not industrial safety thresholds**.
+The three metric gates require candidate AP >= 0.40, an absolute AP improvement >= 0.02 against the champion, and recall >= 0.50 at threshold 0.5. The production release also checks model loading and live inference. These thresholds were chosen for the academic demonstration.
 
 For exact DVC hashes, data provenance, experiment results and current promotion policy, see:
 
@@ -195,22 +199,35 @@ feature/*  ->  dev  ->  staging  ->  main
        PR        PR         PR
 ```
 
-Changes are developed on short-lived `feature/*` branches created from `dev`, reviewed through Pull Requests, and promoted sequentially. CI checks run on PRs targeting `dev`, `staging`, and `main`. The long-lived branches are marked protected on GitHub; repository administrators should verify the required status checks and review rules in branch settings.
+Changes are developed on short-lived `feature/*` branches created from `dev`, reviewed through Pull Requests, and promoted sequentially. CI runs on PRs targeting `dev`, `staging`, and `main`. Which CI checks GitHub branch protection requires before merge remains to be confirmed.
 
 | Workflow | Trigger | Action / validation |
 | --- | --- | --- |
 | [`ci.yml`](.github/workflows/ci.yml) | PR to `dev`, `staging`, or `main`; push to these branches; manual dispatch | Python syntax, Ruff critical checks, pytest, Docker build, mock-container smoke test |
-| [`staging.yml`](.github/workflows/staging.yml) | Push to `staging`; manual dispatch | Validate build/tests, deploy Render staging, verify public readiness, model version, and prediction |
-| [`production.yml`](.github/workflows/production.yml) | Push to `main`; manual dispatch | Validate build/tests, deploy Render production for the expected Git SHA, verify the live MLflow champion and prediction |
-| [`continuous-training.yml`](.github/workflows/continuous-training.yml) | Push/PR to `dev`; manual dispatch with `dataset_version` and `ct_mode` | Test ML logic; validate Azure/DVC datasets; verify champion; execute a controlled training/evaluation and **read-only promotion check** when eligible |
+| [`staging.yml`](.github/workflows/staging.yml) | Push or manual dispatch on `staging` for deployment | Validate build/tests, deploy Render staging, verify public readiness, model version, and prediction |
+| [`production.yml`](.github/workflows/production.yml) | Push or manual dispatch on `main` for deployment | Validate build/tests, deploy Render production for the expected Git SHA, verify the live MLflow champion and prediction |
+| [`continuous-training.yml`](.github/workflows/continuous-training.yml) | Push/PR to `dev` or manual dispatch | PRs run tests. Pushes to `dev` validate both datasets and check whether v2 needs training. On manual dispatch from `main`, `validate-only` checks the selected data and registry, and `train-and-check` also runs the retraining gate. A `TRAIN` decision leads to training, evaluation and a read-only promotion check. |
 | [`ct-production-release.yml`](.github/workflows/ct-production-release.yml) | Manual dispatch on `main`, with `ct_run_id` and `release_mode` | Preflight comparison; optional protected promotion, Render redeployment and recovery logic |
-| [`production-model-monitor.yml`](.github/workflows/production-model-monitor.yml) | Scheduled; manual dispatch; completed production deployment/release workflow | Check that the live version matches the MLflow champion |
+| [`production-model-monitor.yml`](.github/workflows/production-model-monitor.yml) | At minutes 17 and 47 each hour, on manual dispatch, or after a production deployment/release workflow completes | Read the MLflow champion, verify readiness, model identity and a live prediction, then recheck the alias |
 
 **Continuous-training release boundary:** Training and comparison do **not** automatically modify the production champion. The separate, explicitly authorized `CT Production Release` workflow performs a real promotion only after its preflight and production-environment authorization. A candidate that fails the quality gates must leave the champion unchanged and log the rejection reason.
 
 For credentials, deployment reproduction, branch flow, and production incident handling, see [Deployment and Twelve-Factor documentation](DEPLOYMENT.md).
 
-### Verified CI/CD evidence
+### Production rehearsal evidence (25 November 2026)
+
+| Step | Verified outcome | Evidence |
+| --- | --- | --- |
+| Starting deployment | Render served champion v1. | [Production deployment](https://github.com/eugeniettc/final-project-ml-in-prod/actions/runs/45709532179) |
+| Continuous Training | Training on `data-v2` produced an eligible candidate. All three quality gates passed, with an absolute AP gain of 0.0295. | [CT workflow](https://github.com/eugeniettc/final-project-ml-in-prod/actions/runs/45710611379) · [MLflow run `83942914196549e89ebb69a4dbb89844`](https://dagshub.com/Abdel380/predictmaint-ai.mlflow/#/experiments/2/runs/83942914196549e89ebb69a4dbb89844) |
+| Protected release | A reviewer approved `production-ct`. The release promoted v3, automatically redeployed Render and verified inference. | [Approved release](https://github.com/eugeniettc/final-project-ml-in-prod/actions/runs/45712120942) |
+| Post-promotion monitor | MLflow and the live API agreed on v3. | [Synchronization check](https://github.com/eugeniettc/final-project-ml-in-prod/actions/runs/45712976568) |
+| Controlled rollback | After a successful dry-run, `ml.rollback` restored v1. Production was redeployed and verified over HTTP. | [MLflow rollback audit](https://dagshub.com/Abdel380/predictmaint-ai.mlflow/#/experiments/2/runs/87a607ce17f74f329995e2f4db0a085b) · [Render and HTTP verification](https://github.com/eugeniettc/final-project-ml-in-prod/actions/runs/45716691906) |
+| Final state | The `main` deployment at `b2044c0` passed. The production monitor confirmed champion v1. | [Final deployment](https://github.com/eugeniettc/final-project-ml-in-prod/actions/runs/45718935803) · [Final monitor](https://github.com/eugeniettc/final-project-ml-in-prod/actions/runs/45719605125) |
+
+The rehearsal recorded **46 passing automated tests**. The production workflow builds `predictmaint-ai:production` for validation and checks the Git SHA reported by Render. The immutable image digest actually served by Render remains unconfirmed. Python package versions in `requirements.txt` are unpinned.
+
+### Earlier CI/CD evidence
 
 - [Rollback implementation and tests — PR #14](https://github.com/eugeniettc/final-project-ml-in-prod/pull/14)
 - [Staging validation — PR #15](https://github.com/eugeniettc/final-project-ml-in-prod/pull/15)
@@ -218,24 +235,22 @@ For credentials, deployment reproduction, branch flow, and production incident h
 - [Production deploy with a live prediction and champion v2](https://github.com/eugeniettc/final-project-ml-in-prod/actions/runs/45695248713)
 - [Production model synchronization monitor](https://github.com/eugeniettc/final-project-ml-in-prod/actions/runs/45696050322)
 
-The deployment workflow verified the expected Git commit as live on Render and a successful production prediction with model version **2** (November 25, 2026). The Docker image is currently built with an environment label such as `predictmaint-ai:production`; commit-based **image tagging/digest pinning** is a separate DevOps compliance check, not something this README claims is already in place.
-
 ## 6. Rollback and failure recovery
 
 `ml/rollback.py` supports a dry-run (default) and an explicit `--execute` flag. It verifies the expected current champion, the previous approved version, MLflow registration/provenance and a local inference check **before** changing the alias. The application must then restart/redeploy and pass live HTTP verification.
 
-A controlled demonstration used the isolated registry model `predictmaint-ai-ct-demo-henri-fixed`, restoring champion **v4 -> v1**, then reloading FastAPI and verifying `/model-info` and `/predict` locally. **No rollback was performed on the production Render model.**
+The production rehearsal restored **v3 → v1** on Render. An earlier exercise restored **v4 → v1** on the isolated registered model `predictmaint-ai-ct-demo-henri-fixed` and verified `/model-info` and `/predict` on a local FastAPI instance.
 
 - [Complete rollback commands and incident runbook](DEPLOYMENT.md#4-mlflow-model-rollback)
-- [MLflow rollback audit run](https://dagshub.com/Abdel380/predictmaint-ai.mlflow/#/experiments/2/runs/62ee72d6e93a41de99705dbedd304dcd)
+- [Isolated v4 → v1 rollback audit](https://dagshub.com/Abdel380/predictmaint-ai.mlflow/#/experiments/2/runs/62ee72d6e93a41de99705dbedd304dcd)
 
-The protected CT release code also includes automatic recovery if a newly promoted model cannot be deployed successfully; failure-and-recovery on the hosted production service has not yet been demonstrated end to end.
+Controlled tests cover automatic recovery after a deployment failure. The production rehearsal exercised a deliberate rollback following a successful release. No deployment failure was induced on Render.
 
 ## 7. Observability
 
 FastAPI exposes `/metrics` for Prometheus and emits structured inference/application logs. A local Docker Compose stack can start the API, Prometheus and Grafana for dashboard and replay experiments.
 
-See [Monitoring setup and demonstration](monitoring/README.md) and [Grafana dashboard definition](monitoring/dashboard.json). Monitoring dashboards and SMTP alerts require local configuration and are not presented here as publicly hosted services.
+The local stack scrapes `api:8000/metrics`. The API readiness probe is `/ready`. To enable local Grafana email alerts, set `GF_SMTP_ENABLED=true` and configure the SMTP connection and alert rules. [Monitoring setup](monitoring/README.md) · [Grafana dashboard](monitoring/dashboard.json)
 
 ## 8. Documentation map
 
