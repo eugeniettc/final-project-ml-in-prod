@@ -22,6 +22,37 @@ FEATURES = [
 ]
 
 
+def validate_rollback_policy(champion, target):
+    """Allow rollback only to the recorded previous champion."""
+
+    if str(champion.version) == str(target.version):
+        raise RuntimeError(
+            "Rollback target is already the current champion."
+        )
+
+    if target.status != "READY":
+        raise RuntimeError(
+            "Rollback target model is not READY."
+        )
+
+    tags = champion.tags or {}
+
+    if tags.get("approved_by") != "continuous_training_policy":
+        raise RuntimeError(
+            "Current champion has no approved CT provenance."
+        )
+
+    previous_version = tags.get(
+        "previous_champion_version"
+    )
+
+    if previous_version != str(target.version):
+        raise RuntimeError(
+            "Rollback target is not the recorded "
+            "previous champion."
+        )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Safely restore an approved MLflow model version."
@@ -59,13 +90,7 @@ def main():
         MODEL_NAME, str(args.to_version)
     )
 
-    if target.status != "READY":
-        raise RuntimeError("Target model is not READY.")
-
-    # For our controlled demonstration, only versions
-    # 1 and 2 have previously been approved.
-    if args.to_version not in {1, 2}:
-        raise RuntimeError("Target version is not approved.")
+    validate_rollback_policy(champion, target)
 
     # 3. Load and test the target BEFORE modifying the alias
     model = mlflow.sklearn.load_model(
@@ -96,6 +121,16 @@ def main():
         print("No champion alias modification.")
         return
 
+    # Verify that the champion has not changed
+    # while the rollback prechecks were running.
+    latest_champion = client.get_model_version_by_alias(
+        MODEL_NAME, "champion"
+    )
+
+    if int(latest_champion.version) != current_version:
+        raise RuntimeError(
+            "Champion changed during rollback validation."
+        )
     # 5. Change the alias
     client.set_registered_model_alias(
         name=MODEL_NAME,
