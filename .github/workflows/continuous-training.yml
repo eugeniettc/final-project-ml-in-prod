@@ -2,7 +2,7 @@ name: PredictMaint - Continuous Training
 on:
   push:
     branches:
-      - feature/continuous-training
+      - dev
   pull_request:
     branches:
       - dev
@@ -55,9 +55,12 @@ jobs:
     needs: ml-tests
     if: >-
       github.repository == 'eugeniettc/final-project-ml-in-prod' &&
-      github.ref == 'refs/heads/feature/continuous-training' &&
-      (github.event_name == 'push' ||
-       github.event_name == 'workflow_dispatch')
+      (
+        (github.event_name == 'push' &&
+         github.ref == 'refs/heads/dev') ||
+        (github.event_name == 'workflow_dispatch' &&
+         github.ref == 'refs/heads/main')
+      )
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -104,9 +107,12 @@ jobs:
     needs: [ml-tests, data-validation]
     if: >-
       github.repository == 'eugeniettc/final-project-ml-in-prod' &&
-      github.ref == 'refs/heads/feature/continuous-training' &&
-      (github.event_name == 'push' ||
-       github.event_name == 'workflow_dispatch')
+      (
+        (github.event_name == 'push' &&
+         github.ref == 'refs/heads/dev') ||
+        (github.event_name == 'workflow_dispatch' &&
+         github.ref == 'refs/heads/main')
+      )
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -152,25 +158,16 @@ jobs:
     name: Continuous Training dry-run
     runs-on: ubuntu-latest
     needs: [data-validation, mlflow-registry-check]
-
     env:
-      CT_MODEL_NAME: ${{ contains(github.event.head_commit.message, '[run-ct-demo]') && 'predictmaint-ai-ct-demo-henri-fixed' || 'predictmaint-ai' }}
-
+      CT_MODEL_NAME: predictmaint-ai
     if: >-
       github.repository == 'eugeniettc/final-project-ml-in-prod' &&
-      github.ref == 'refs/heads/feature/continuous-training' &&
       (
-        (
-          github.event_name == 'workflow_dispatch' &&
-          inputs.ct_mode == 'train-and-check'
-        ) ||
-        (
-          github.event_name == 'push' &&
-          (
-            contains(github.event.head_commit.message, '[run-ct-dry-run]') ||
-            contains(github.event.head_commit.message, '[run-ct-demo]')
-          )
-        )
+        (github.event_name == 'push' &&
+         github.ref == 'refs/heads/dev') ||
+        (github.event_name == 'workflow_dispatch' &&
+         github.ref == 'refs/heads/main' &&
+         inputs.ct_mode == 'train-and-check')
       )
     steps:
       - name: Checkout repository
@@ -243,16 +240,9 @@ jobs:
           DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
           CT_RUN_ID: ${{ steps.train_candidate.outputs.run_id }}
         run: |
-          if [ "$CT_MODEL_NAME" = "predictmaint-ai-ct-demo-henri-fixed" ]; then
-            python -m ml.promote_candidate \
-              --run-id "$CT_RUN_ID" \
-              --model-name "$CT_MODEL_NAME" \
-              --execute
-          else
-            python -m ml.promote_candidate \
-              --run-id "$CT_RUN_ID" \
-              --model-name "$CT_MODEL_NAME"
-          fi
+          python -m ml.promote_candidate \
+            --run-id "$CT_RUN_ID" \
+            --model-name "$CT_MODEL_NAME"
       - name: Report skipped training
         if: steps.retrain_gate.outputs.decision == 'SKIPPED'
         env:
@@ -262,122 +252,3 @@ jobs:
           echo "Reason: $SKIP_REASON"
           echo "### Continuous Training: SKIPPED" >> "$GITHUB_STEP_SUMMARY"
           echo "Reason: $SKIP_REASON" >> "$GITHUB_STEP_SUMMARY"
-  # ============================================
-  # 5. PROMOTION PREFLIGHT FROM EXISTING RUN
-  # ============================================
-  promotion-preflight:
-    name: Existing MLflow run promotion check
-    runs-on: ubuntu-latest
-    needs: mlflow-registry-check
-    if: >-
-      github.repository == 'eugeniettc/final-project-ml-in-prod' &&
-      github.ref == 'refs/heads/feature/continuous-training' &&
-      github.event_name == 'push' &&
-      contains(github.event.head_commit.message, '[verify-promotion]')
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-      - name: Verify historical CT rejection
-        env:
-          MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
-          MLFLOW_TRACKING_USERNAME: ${{ vars.DAGSHUB_USERNAME }}
-          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
-          DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-        run: |
-          python -m ml.promote_candidate \
-            --run-id de410647f3f94c14a56db7b1940d0977 \
-            --model-name predictmaint-ai
-  # ============================================
-  # 6. CONTROLLED DEMO PROMOTION
-  # ============================================
-  demo-promotion:
-    name: Controlled MLflow demo promotion
-    runs-on: ubuntu-latest
-    needs: mlflow-registry-check
-    if: >-
-      github.repository == 'eugeniettc/final-project-ml-in-prod' &&
-      github.ref == 'refs/heads/feature/continuous-training' &&
-      github.event_name == 'push' &&
-      contains(github.event.head_commit.message, '[demo-promote]')
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-      - name: Verify initial registry state
-        env:
-          MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
-          MLFLOW_TRACKING_USERNAME: ${{ vars.DAGSHUB_USERNAME }}
-          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
-        run: |
-          python - <<'PY'
-          from mlflow import MlflowClient
-          client = MlflowClient()
-          prod = client.get_model_version_by_alias(
-              "predictmaint-ai", "champion"
-          )
-          demo = client.get_model_version_by_alias(
-              "predictmaint-ai-ct-demo-henri-fixed",
-              "champion",
-          )
-          print("Production champion:", prod.version)
-          print("Demo champion:", demo.version)
-          assert str(prod.version) == "2"
-          assert str(demo.version) == "1"
-          print("Initial registry state verified.")
-          PY
-      - name: Execute approved demo promotion
-        env:
-          MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
-          MLFLOW_TRACKING_USERNAME: ${{ vars.DAGSHUB_USERNAME }}
-          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
-          DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
-        run: |
-          python -m ml.promote_candidate \
-            --run-id 96adcb12ccbf4146a3b849a83de2dbd3 \
-            --model-name predictmaint-ai-ct-demo-henri-fixed \
-            --execute
-      - name: Verify demo promotion and production safety
-        env:
-          MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
-          MLFLOW_TRACKING_USERNAME: ${{ vars.DAGSHUB_USERNAME }}
-          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
-        run: |
-          python - <<'PY'
-          from mlflow import MlflowClient
-          client = MlflowClient()
-          demo = client.get_model_version_by_alias(
-              "predictmaint-ai-ct-demo-henri-fixed",
-              "champion",
-          )
-          prod = client.get_model_version_by_alias(
-              "predictmaint-ai",
-              "champion",
-          )
-          assert int(demo.version) > 1
-          assert demo.status == "READY"
-          assert demo.tags.get("ct_run_id") == (
-              "96adcb12ccbf4146a3b849a83de2dbd3"
-          )
-          assert str(prod.version) == "2"
-          print("\nDEMO PROMOTION VERIFIED!")
-          print("Demo champion:", demo.version)
-          print("Production champion:", prod.version)
-          print("Production unchanged.")
-          PY

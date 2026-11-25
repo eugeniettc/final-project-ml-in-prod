@@ -9,6 +9,15 @@ on:
         required: true
         type: string
 
+      release_mode:
+        description: "Production release mode"
+        required: true
+        default: preflight
+        type: choice
+        options:
+          - preflight
+          - release
+
 permissions:
   contents: read
 
@@ -23,7 +32,9 @@ jobs:
       github.repository == 'eugeniettc/final-project-ml-in-prod' &&
       github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-
+    outputs:
+      promotion_decision: ${{ steps.preflight.outputs.promotion_decision }}
+      promotion_executed: ${{ steps.preflight.outputs.promotion_executed }}
     env:
       CT_RUN_ID: ${{ inputs.ct_run_id }}
       PRODUCTION_URL: ${{ vars.RENDER_PRODUCTION_URL }}
@@ -132,4 +143,88 @@ jobs:
             echo "- Candidate decision: $DECISION"
             echo "- Promotion executed: $EXECUTED"
             echo "- Production model unchanged: yes"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: Protected CT promotion and Render deployment
+    needs: preflight
+    if: >-
+      github.repository == 'eugeniettc/final-project-ml-in-prod' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.release_mode == 'release' &&
+      needs.preflight.outputs.promotion_decision == 'ELIGIBLE' &&
+      needs.preflight.outputs.promotion_executed == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    environment:
+      name: production-ct
+
+    env:
+      CT_RUN_ID: ${{ inputs.ct_run_id }}
+      PRODUCTION_URL: ${{ vars.RENDER_PRODUCTION_URL }}
+
+      MLFLOW_TRACKING_URI: https://dagshub.com/Abdel380/predictmaint-ai.mlflow
+      MLFLOW_TRACKING_USERNAME: ${{ vars.DAGSHUB_USERNAME }}
+      MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+      DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+
+      AZURE_STORAGE_SAS_TOKEN: ${{ secrets.AZURE_STORAGE_SAS_TOKEN }}
+
+      RENDER_PRODUCTION_DEPLOY_HOOK_URL: ${{ secrets.RENDER_PRODUCTION_DEPLOY_HOOK_URL }}
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      RENDER_PRODUCTION_SERVICE_ID: ${{ vars.RENDER_PRODUCTION_SERVICE_ID }}
+
+      CT_ALLOW_PRODUCTION_PROMOTION: "true"
+
+    steps:
+      - name: Checkout production code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Verify automated tests
+        env:
+          ENABLE_MOCK_MODEL: "true"
+        run: python -m pytest tests/ -q
+
+      - name: Download datasets from Azure
+        run: |
+          if [ -z "$AZURE_STORAGE_SAS_TOKEN" ]; then
+            echo "::error::Missing Azure credentials"
+            exit 1
+          fi
+
+          dvc pull -r myazure
+
+          test -s data/splits/validation.csv
+          test -s data/splits/test.csv
+
+      - name: Execute protected CT release
+        run: |
+          python -m ml.ct_release \
+            --run-id "$CT_RUN_ID" \
+            --url "$PRODUCTION_URL" \
+            --execute
+
+      - name: Write release summary
+        if: always()
+        run: |
+          {
+            echo "## CT Production Release"
+            echo ""
+            echo "- MLflow Run ID: $CT_RUN_ID"
+            echo "- Git SHA: $GITHUB_SHA"
+            echo "- Job status: ${{ job.status }}"
+            echo ""
+            echo "Inspect logs for deployment and rollback results."
           } >> "$GITHUB_STEP_SUMMARY"
