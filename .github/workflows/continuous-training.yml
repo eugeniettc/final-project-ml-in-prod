@@ -152,6 +152,10 @@ jobs:
     name: Continuous Training dry-run
     runs-on: ubuntu-latest
     needs: [data-validation, mlflow-registry-check]
+
+    env:
+      CT_MODEL_NAME: ${{ contains(github.event.head_commit.message, '[run-ct-demo]') && 'predictmaint-ai-ct-demo-henri-fixed' || 'predictmaint-ai' }}
+
     if: >-
       github.repository == 'eugeniettc/final-project-ml-in-prod' &&
       github.ref == 'refs/heads/feature/continuous-training' &&
@@ -162,7 +166,10 @@ jobs:
         ) ||
         (
           github.event_name == 'push' &&
-          contains(github.event.head_commit.message, '[run-ct-dry-run]')
+          (
+            contains(github.event.head_commit.message, '[run-ct-dry-run]') ||
+            contains(github.event.head_commit.message, '[run-ct-demo]')
+          )
         )
       )
     steps:
@@ -236,9 +243,16 @@ jobs:
           DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
           CT_RUN_ID: ${{ steps.train_candidate.outputs.run_id }}
         run: |
-          python -m ml.promote_candidate \
-            --run-id "$CT_RUN_ID" \
-            --model-name predictmaint-ai
+          if [ "$CT_MODEL_NAME" = "predictmaint-ai-ct-demo-henri-fixed" ]; then
+            python -m ml.promote_candidate \
+              --run-id "$CT_RUN_ID" \
+              --model-name "$CT_MODEL_NAME" \
+              --execute
+          else
+            python -m ml.promote_candidate \
+              --run-id "$CT_RUN_ID" \
+              --model-name "$CT_MODEL_NAME"
+          fi
       - name: Report skipped training
         if: steps.retrain_gate.outputs.decision == 'SKIPPED'
         env:

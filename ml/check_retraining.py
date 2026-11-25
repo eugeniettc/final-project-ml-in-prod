@@ -13,8 +13,7 @@ import os
 
 import mlflow
 ROOT = Path(__file__).resolve().parents[1]
-MODEL_NAME = "predictmaint-ai"
-
+MODEL_NAME = os.getenv("CT_MODEL_NAME", "predictmaint-ai")
 
 def get_dvc_hash(dataset_version):
     dvc_file = (

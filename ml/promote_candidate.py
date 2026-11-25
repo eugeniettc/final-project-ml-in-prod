@@ -55,6 +55,18 @@ def main():
     # Fetch the completed training run.
     run = client.get_run(args.run_id)
 
+    recorded_model_name = run.data.tags.get(
+        "registry_model_name"
+    )
+
+    if (
+        recorded_model_name
+        and recorded_model_name != args.model_name
+    ):
+        raise RuntimeError(
+            "Candidate was evaluated for a different "
+            "registered model."
+        )
     if run.info.status != "FINISHED":
         raise RuntimeError("CT run is not finished successfully")
 

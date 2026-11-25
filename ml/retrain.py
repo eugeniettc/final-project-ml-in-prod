@@ -9,6 +9,7 @@ import dagshub
 import pandas as pd
 from mlflow import MlflowClient
 import argparse
+import os
 
 # ============================================
 # 1. CONFIGURATION
@@ -54,7 +55,7 @@ FEATURES = [
 ]
 
 TARGET = "Machine failure"
-MODEL_NAME = "predictmaint-ai"
+MODEL_NAME = os.getenv("CT_MODEL_NAME", "predictmaint-ai")
 
 
 # ============================================
@@ -413,6 +414,7 @@ with mlflow.start_run(
         "promotion_decision": (
             "ELIGIBLE" if approved else "REJECTED"
         ),
+        "registry_model_name": MODEL_NAME,
     })
 
     # 2. Training configuration and quality gates.
