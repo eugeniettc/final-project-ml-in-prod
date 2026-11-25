@@ -1,0 +1,5 @@
+outs:
+- md5: a346c1c500fbd9514b035e60dc87bfc8
+  size: 513889
+  hash: md5
+  path: ai4i_2020.csv

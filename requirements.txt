@@ -1,0 +1,14 @@
+numpy
+pandas
+scikit-learn
+fastapi
+uvicorn
+pydantic
+mlflow
+dagshub
+dvc[azure]
+ucimlrepo
+pytest
+httpx
+python-dotenv
+ruff
