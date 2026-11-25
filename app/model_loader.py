@@ -1,8 +1,11 @@
 import os
 import logging
+from numbers import Real
 from typing import Tuple, Optional
 import pandas as pd
 import numpy as np
+
+from app.schemas import MachineDataInput
 
 logger = logging.getLogger("predictmaint.model_loader")
 
@@ -45,6 +48,10 @@ class ModelService:
         Charge le modèle MLflow portant l'alias 'champion'.
         Résout d'abord la version concrète pour garantir la traçabilité.
         """
+        self.is_ready = False
+        self.model = None
+        self.loaded_version = None
+
         # Vérifie si le mode MOCK est explicitement demandé (pour les tests locaux)
         if os.getenv("ENABLE_MOCK_MODEL", "false").lower() == "true":
             logger.warning("MODE MOCK ACTIVÉ : Utilisation d'un modèle simulé pour les tests.")
@@ -79,7 +86,17 @@ class ModelService:
             
             loaded_model = mlflow.sklearn.load_model(model_uri)
 
-            # 3. Validation de l'état
+            # 3. Vérifier l'inférence avant de publier le modèle comme prêt.
+            smoke_input = MachineDataInput(
+                type="L",
+                air_temperature=298.1,
+                process_temperature=308.6,
+                rotational_speed=1500.0,
+                torque=40.0,
+                tool_wear=20.0,
+            )
+            self._predict(loaded_model, smoke_input.to_model_dataframe())
+
             self.model = loaded_model
             self.loaded_version = concrete_version
             self.is_ready = True
@@ -104,17 +121,31 @@ class ModelService:
         if not self.is_ready or self.model is None:
             raise RuntimeError("Le modèle n'est pas prêt à servir des prédictions.")
 
+        return self._predict(self.model, features_df)
+
+    @staticmethod
+    def _predict(model, features_df: pd.DataFrame) -> Tuple[int, float]:
+        """Calcul partagé par le contrôle de démarrage et les requêtes HTTP."""
         # Calcul des prédictions
-        prediction = int(self.model.predict(features_df)[0])
+        prediction = model.predict(features_df)[0]
+        if not isinstance(prediction, Real) or prediction not in (0, 1):
+            raise ValueError("La prédiction du modèle doit être binaire (0 ou 1).")
 
         # Calcul du score de risque
-        if hasattr(self.model, "predict_proba"):
-            probabilities = self.model.predict_proba(features_df)
-            risk_score = float(probabilities[0][1])  # Probabilité de la classe 1 (Panne)
+        if hasattr(model, "predict_proba"):
+            probabilities = model.predict_proba(features_df)
+            risk_score = probabilities[0][1]  # Probabilité de la classe 1 (Panne)
         else:
             risk_score = float(prediction)
 
-        return prediction, round(risk_score, 4)
+        if (
+            not isinstance(risk_score, Real)
+            or not np.isfinite(risk_score)
+            or not 0 <= risk_score <= 1
+        ):
+            raise ValueError("Le score de risque doit être numérique, fini et compris entre 0 et 1.")
+
+        return int(prediction), round(float(risk_score), 4)
 
 
 # Instance unique (Singleton) partagée dans toute l'application
