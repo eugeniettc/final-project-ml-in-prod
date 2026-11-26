@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 210 130">
+  <!-- Vertical mill with a raised spindle housing and projecting control pendant. -->
+  <g stroke-linejoin="round" stroke-linecap="round">
+    <path fill="#d8e1e8" d="m17 98 94 24 84-34-104-18z"/>
+    <path fill="#3f5362" stroke="#324755" d="m26 87 86 18 53-24v11l-54 25-85-18z"/>
+    <path fill="#d0dce2" stroke="#697f8c" d="m26 75 52-24 88 16-55 27z"/>
+    <path fill="#e6edef" stroke="#697f8c" d="m26 75 85 19v13L26 89z"/>
+    <path fill="#a7bac6" stroke="#647a88" d="m111 94 55-27-1 16-54 25z"/>
+    <path fill="#dce4e8" stroke="#697f8c" d="m31 48 11 2v26l-11-2z"/>
+    <path fill="#839aa7" stroke="#647a88" d="m42 50 39-18v26L42 76z"/>
+    <path fill="#d1dde3" stroke="#697f8c" d="m31 48 39-19 11 3-39 18z"/>
+    <path fill="#c0ced5" stroke="#657e8c" d="m82 22 34 7v45l-34-7z"/>
+    <path fill="#94aab6" stroke="#627a89" d="m116 29 24-12v46l-24 11z"/>
+    <path fill="#e2e9ec" stroke="#708691" d="m82 22 24-12 34 7-24 12z"/>
+    <path fill="#596f7c" d="m87 29 20 4v31l-20-4z"/>
+    <path stroke="#9bacb7" stroke-width="2" d="m91 33 1 26m9-24 1 25"/>
+    <path fill="#dce5e9" stroke="#657b89" d="m65 34 20-10 28 6-20 10z"/>
+    <path fill="#668395" stroke="#526a78" d="m93 40 20-10v15l-20 9z"/>
+    <path fill="#e4ebef" stroke="#657b89" d="m65 34 28 6v14l-28-6z"/>
+    <path fill="#42749a" d="m66 42 26 5v4l-26-5z"/>
+    <path fill="#7d94a4" stroke="#556e7d" d="m72 50 14 3-3 8-7 2-4-5z"/>
+    <path stroke="#435c69" stroke-width="2" d="M79 62v5"/>
+    <path fill="#8298a6" stroke="#536c7b" d="m49 74 33-15 34 7-32 16z"/>
+    <path fill="#acbbc5" stroke="#536c7b" d="m49 74 35 8 32-16v5L84 87l-35-8z"/>
+    <path stroke="#4a6272" d="m58 75 29-14m-21 16 29-14m-21 16 29-14"/>
+    <path fill="#a5b7c2" stroke="#667e8d" d="m124 57 11 3v17l-11-2z"/>
+    <path fill="#cdd9e0" stroke="#667e8d" d="m124 57 23-10 11 2-23 11z"/>
+    <path fill="#b0c2cc" stroke="#667e8d" d="m135 60 23-11v17l-23 11z"/>
+    <path fill="none" stroke="#536b7b" stroke-width="3" d="m138 36 18 4v9"/>
+    <path fill="#465e6e" stroke="#344e5d" d="m149 45 15 3v22l-15-3z"/>
+    <path fill="#a9ced5" d="m152 49 9 2v7l-9-2z"/>
+    <path stroke="#d2dcdf" stroke-width="2" stroke-dasharray="1 2" d="m152 60 8 2m-8 2 7 1"/>
+    <path fill="#42759c" d="m27 84 83 18v4L27 88zm86 18 51-23v4l-51 24z"/>
+  </g>
+</svg>
