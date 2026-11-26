@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 210 130">
+  <!-- Enclosed five-axis machining center, shown in three-quarter view. -->
+  <g stroke-linejoin="round" stroke-linecap="round">
+    <path fill="#d8e1e8" d="m15 102 123 22 61-30-115-18z"/>
+    <path fill="#334759" stroke="#2c3e4d" d="m24 90 100 18 51-25v12l-51 25-100-19z"/>
+    <path fill="#becbd3" stroke="#536a78" d="m21 41 50-24 105 17-50 25z"/>
+    <path fill="#f1f4f5" stroke="#637785" d="m21 41 105 18v51L21 91z"/>
+    <path fill="#b5c4ce" stroke="#526574" d="m126 59 50-25v51l-50 25z"/>
+    <path fill="#dfe6ea" stroke="#8799a4" d="m25 46 17 3v39l-17-3z"/>
+    <path fill="#d6e0e4" stroke="#8799a4" d="m45 49 59 10v43L45 91z"/>
+    <path fill="#274352" stroke="#516a77" stroke-width="2" d="m49 54 50 9v26l-50-9z"/>
+    <path fill="#799ca8" d="m52 57 19 3-9 20-10-2zm35 6 9 1v6l-8 15-12-2z"/>
+    <path fill="#b7cbd0" d="m74 58 7 1v7l-2 3-1 8-2-1-1-8-1-1z"/>
+    <path fill="#678591" d="m59 77 19 3 6-3 9 4-13 4-21-4z"/>
+    <path stroke="#798d99" d="m73 55 1 41m-20-9 12 2"/>
+    <path stroke="#364d5d" stroke-width="2.5" d="m94 91 1 4"/>
+    <path fill="#2373a8" d="m22 84 103 18v5L22 89zm105 18 48-23v5l-48 24z"/>
+    <path fill="#d4dfe5" stroke="#748997" d="m133 60 35-17v35l-35 17z"/>
+    <g stroke="#7c919e"><path d="m138 66 24-12m-24 16 24-12m-24 16 24-12m-24 16 24-12"/></g>
+    <path fill="#536674" stroke="#3c5361" d="m106 56 14 2v28l-14-2z"/>
+    <path fill="#9bc8cf" d="m108 59 10 2v8l-10-2z"/>
+    <path stroke="#c4d3d9" stroke-dasharray="1 2" stroke-width="2" d="m109 72 8 1m-8 3 8 1"/>
+    <circle cx="116" cy="81" r="1.7" fill="#e7ae54"/>
+    <path fill="#e0e7eb" stroke="#8799a4" d="m36 39 35-17 58 10-32 17z"/>
+    <path fill="#485e6e" d="m80 28 23 4-12 6-23-4z"/>
+    <path stroke="#9daeb8" d="m75 34 14-5m-9 6 14-6m-8 7 13-6"/>
+    <path stroke="#657b87" stroke-width="3" d="M147 34v-9"/>
+    <path fill="#dfab59" stroke="#7f796a" d="m144 24 5 .5v7l-5-.5z"/>
+    <path stroke="#c4d2da" d="m26 94 96 17"/>
+  </g>
+</svg>
