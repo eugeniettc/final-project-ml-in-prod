@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 210 130">
+  <!-- Low, elongated lathe enclosure with a sloping operator window. -->
+  <g stroke-linejoin="round" stroke-linecap="round">
+    <path fill="#d8e1e8" d="m6 92 137 29 60-30-135-25z"/>
+    <path fill="#344956" stroke="#344956" d="m13 84 130 23 46-22v10l-46 23L13 94z"/>
+    <path fill="#c1ced7" stroke="#6c808e" d="m15 65 10-27 38-18 127 23-4 41-44 23L13 84z"/>
+    <path fill="#eaf0f2" stroke="#627b88" d="m25 38 128 24-11 25L15 65z"/>
+    <path fill="#f2f5f5" stroke="#758994" d="m15 65 127 22v21L13 85z"/>
+    <path fill="#aebfc9" stroke="#617785" d="m153 62 37-19-2 42-46 23V87z"/>
+    <path fill="#a6b9c5" stroke="#758895" d="m63 20 125 23-36 18L26 38z"/>
+    <path fill="#d7e2e7" stroke="#8296a1" d="m59 44 46 9-9 35-50-9 5-15z"/>
+    <path fill="#274751" stroke="#6d8490" stroke-width="2" d="m61 48 39 7-6 16-40-7z"/>
+    <path fill="#7197a4" d="m63 50 14 3-10 12-10-2zm28 5 6 1-4 11-9 1z"/>
+    <path stroke="#bacbd1" stroke-width="2" d="m64 58 6 1m11 3 8 1"/>
+    <path fill="#adc1cb" d="m69 54 4 1 1 9-6-1z"/>
+    <path stroke="#344d5b" stroke-width="2.6" d="m90 76 4 1"/>
+    <path fill="#287e87" d="m15 77 126 23v5L14 82zm128 22 44-21v6l-44 21z"/>
+    <path fill="#3b5362" stroke="#465f6e" d="m121 53 20 4-5 23-21-4z"/>
+    <path fill="#b2d2d6" d="m123 56 14 2-2 8-14-2z"/>
+    <path stroke="#cbd8d9" stroke-width="2" stroke-dasharray="1 2" d="m120 68 11 2m-12 2 11 2"/>
+    <circle cx="133" cy="75" r="1.8" fill="#ecb55d"/>
+    <path stroke="#788e9a" d="m22 71 18 3m-18 1 18 3m112 4 23-11m-24 15 24-11m-25 15 25-12"/>
+    <path fill="#9baeb9" stroke="#8397a2" d="m70 24 22 4-9 4-22-4z"/>
+    <path stroke="#889eaa" d="m105 34 53 10m-57-8 53 10"/>
+    <path stroke="#becbd3" d="m18 88 120 22"/>
+  </g>
+</svg>

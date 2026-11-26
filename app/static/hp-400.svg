@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 210 130">
+  <!-- Open press frame, ram, die, bed and hydraulic power pack. -->
+  <g stroke-linejoin="round" stroke-linecap="round">
+    <path fill="#d8e1e8" d="m28 101 77 21 69-30-75-17z"/>
+    <path fill="#455766" stroke="#384c59" d="m39 90 68 14 36-17v13l-36 17-68-15z"/>
+    <path fill="#a6b7c0" stroke="#627886" d="m39 90 34-16 70 13-36 18z"/>
+    <path fill="#d4a853" stroke="#796947" d="m53 41 12 2v48l-12-2z"/>
+    <path fill="#ac843c" stroke="#786849" d="m65 43 7-4v48l-7 4z"/>
+    <path fill="#c29a4c" stroke="#796947" d="m82 28 10 2v45l-10-2z"/>
+    <path fill="#d5aa58" stroke="#806b45" d="m124 38 11 2v46l-11-2z"/>
+    <path fill="#b4c4cc" stroke="#536978" d="m83 40 18 4-1 14-8 4-9-3z"/>
+    <path fill="#dde5e8" stroke="#728895" d="m86 56 10 2v11l-4 2-6-2z"/>
+    <path fill="#52697a" stroke="#405764" d="m77 68 13-6 18 4-12 6z"/>
+    <path fill="#8ba0ae" stroke="#516a78" d="m76 68 20 4 12-6v5l-12 6-20-4z"/>
+    <path fill="#607685" stroke="#4b606c" d="m64 82 26-13 34 7-25 14z"/>
+    <path fill="#a3b4be" stroke="#536a78" d="m64 82 35 8 25-14v6L99 95l-35-7z"/>
+    <path fill="#3f5360" d="m78 80 14-6 15 3-14 7z"/>
+    <path fill="#e1b864" stroke="#796947" d="m97 52 13 2v48l-13-3z"/>
+    <path fill="#b08a43" stroke="#7b6948" d="m110 54 7-4v48l-7 4z"/>
+    <path fill="#cf9c45" stroke="#806c49" d="m48 26 33-15 64 12-32 17z"/>
+    <path fill="#e0b25e" stroke="#806c49" d="m48 26 65 14v19L48 45z"/>
+    <path fill="#ad853e" stroke="#806c49" d="m113 40 32-17v19l-32 17z"/>
+    <path fill="#e7c788" d="m53 30 54 11v3L53 33z"/>
+    <g fill="#786748"><circle cx="54" cy="39" r="1.8"/><circle cx="106" cy="50" r="1.8"/></g>
+    <path fill="none" stroke="#465865" stroke-width="2.5" d="M132 30q16-10 19-1l-1 37q0 5 7 8"/>
+    <path fill="#c9d5db" stroke="#627784" d="m137 74 12-7 15 3-11 7z"/>
+    <path fill="#b4c3cb" stroke="#627784" d="m137 74 16 3v16l-16-3z"/>
+    <path fill="#899da9" stroke="#627784" d="m153 77 11-7v16l-11 7z"/>
+    <path fill="#d0dce1" stroke="#657c88" d="m99 58 10 2v15l-10-2z"/>
+    <circle cx="104" cy="64" r="2" fill="#ae514b"/><circle cx="104" cy="70" r="1.4" fill="#496e7a"/>
+  </g>
+</svg>
